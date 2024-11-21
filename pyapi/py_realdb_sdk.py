@@ -3,6 +3,7 @@
 # This code is modified from the original version to improve the readability and maintainability of the code.
 # This API is valid for the RealDB server version 1.x, 2.x, 3.x
 ##########################################################
+import io, csv
 import socket
 import struct
 import time
@@ -42,6 +43,60 @@ class PYRealDB(object):
         self.port= port
         self.db_version = db_version
 
+    def ReadTagConfig(self, timeout=2):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_client:
+                s_client.settimeout(timeout)
+                try:
+                    s_client.connect((self.host, self.port))
+                    ini_msg = s_client.recv(PYREALDB_BUFFERLEN)
+                    ini_return, *_ = struct.unpack('4s', ini_msg[:4])
+                    if ini_return != b'STAR':
+                        raise Exception('connection return error')
+                except Exception as e:
+                    print(f"connect error: {e}")
+                    return ReturnCode.CONNECT_ERROR, []
+
+                if self.db_version == 3:
+                    rndcode = random.getrandbits(64)
+                    version = 0
+                    format_str = '=4siQii'
+                    packed_data =  struct.pack(format_str, 
+                                            b'tcon',
+                                            16,
+                                            rndcode,
+                                            version,
+                                            0)
+                else:
+                    raise Exception('unsupported server version')
+                
+                s_client.sendall(packed_data)
+                
+                return_code, return_rndcode, data = self.__recv_timeout(s_client, timeout)
+                if return_code != ReturnCode.OK:
+                    return return_code, []
+                if return_rndcode != rndcode:
+                    return ReturnCode.FAILED, []
+                if self.db_version == 3:
+                    format_str = '=4siQb'
+                    parsed_size = struct.calcsize(format_str)
+                    csv_data = data[parsed_size:]
+                    bom = b'\xef\xbb\xbf'
+                    if csv_data.startswith(bom):
+                        csv_data = csv_data[len(bom):]
+                    csv_str = csv_data.decode('utf-8')
+                    csv_file = io.StringIO(csv_str)
+                    csv_reader = csv.reader(csv_file)
+                    vals = []
+                    for row in csv_reader:
+                        vals.append(row)
+                    return ReturnCode.OK, vals
+                else:
+                    raise Exception('unsupported server version')
+
+        except Exception as e:
+            print(f"read tag config error: {e}")
+            return ReturnCode.FAILED, []
 
     def ReadData(self, addresses: List[int], starttime: datetime.datetime, endtime: datetime.datetime, timeout=2):  
         try:
