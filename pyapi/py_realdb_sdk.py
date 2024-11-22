@@ -131,7 +131,8 @@ class PYRealDB(object):
                         return return_code, []
                     else:
                         ret_data = self.__concat_2_matrix(ret_data, v)
-                        return return_code, ret_data
+                        
+                return return_code, ret_data
 
         except Exception as e:
             print(f"read DB error: {e}")
